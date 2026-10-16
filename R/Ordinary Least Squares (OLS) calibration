@@ -48,11 +48,6 @@ LOD_blank_ols  <- 3.3 * sd_blank / slope_ols
 LOQ_blank_ols  <- 10.0 * sd_blank / slope_ols
 LOD_hubaux_ols <- 3.3 * Sy_x_ols / slope_ols
 
-# ==============================================================================
-  # Model Diagnostics
-# ==============================================================================
-
-cat("[2/4] Computing Model Diagnostics...\n")
 
 cal_data_fit$calc_conc <- (cal_data_fit$response - intercept_ols) / slope_ols
 cal_data_fit$recovery  <- (cal_data_fit$calc_conc / cal_data_fit$conc) * 100
@@ -60,10 +55,9 @@ cal_data_fit$rel_error <- ((cal_data_fit$calc_conc - cal_data_fit$conc) / cal_da
 cal_data_fit$std_resid <- rstandard(model_ols) # Statistically rigorous standardized residuals
 
 # ==============================================================================
- # Independent Validation at PNEC Threshold (96 ppb)
+ # Independent Validation at PNEC Threshold
 # ==============================================================================
 
-cat("[3/4] Processing Independent Dataset...\n")
 
 val_dir <- "C:/path to validation set"
 
