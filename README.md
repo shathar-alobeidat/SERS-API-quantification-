@@ -9,7 +9,7 @@ midazolam (MID))
 
 | Script | Purpose |
 |--------|---------|
-| `01_data_importing_preprocessing.R` | Imports BWTek spectra, reads metadata from the file names, applies LOESS smoothing and ALS baseline correction, with optional vector normalisation. Defines the import function used by the other scripts. |
+| `Data importing and Preprocessing Pipeline.R` | Imports BWTek spectra, reads metadata from the file names, applies LOESS smoothing and ALS baseline correction, with optional vector normalisation. Defines the import function used by the other scripts. |
 | `Ordinary Least Squares (OLS) calibration` | unweighted OLS calibration, figures of merit (LOD, LOQ, recovery, %RE, %RSD), and independent validation at the PNEC. |
 | `Weighted Least Squares (WLS) Calibration` |  weighted least squares calibration , figures of merit, and independent validation at the  PNEC. |
 | `PLSR model and unknown predictions` | PLS regression model in mixtures, with cross-validation, permutation test, and prediction of unknown samples (recovery and confidence intervals). |
