@@ -18,10 +18,10 @@ midazolam (MID))
 
 ## Requirements
 
-R with the packages `hyperSpec`, `baseline`, `readr`, `pls`, `dplyr` and `lmtest`:
+R with the packages `hyperSpec`, `baseline`, `readr`, `pls`, `chemCal`, `dplyr` and `lmtest`:
 
 ```r
-install.packages(c("hyperSpec", "baseline", "readr", "pls", "dplyr", "lmtest"))
+install.packages(c("hyperSpec", "baseline", "readr", "pls", "chemCal", "dplyr", "lmtest"))
 ```
 
 ## Usage
