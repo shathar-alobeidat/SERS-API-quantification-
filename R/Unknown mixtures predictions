@@ -1,0 +1,309 @@
+##this script contains unknown predictions data analysis pipeline via OLS and WLS, using internal standard and without.
+# Set the working directory to the training set to build the calibration model used for prediction 
+# =============================================================================
+setwd("C:/path to training set")   
+spectra_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
+if (length(spectra_files) == 0) stop("No .txt files found for training set.")
+spc      <- lapply(spectra_files, scan.txt.BWtek)
+spc      <- collapse(spc)
+spc$file <- spectra_files
+meta     <- strsplit(spc$file, "_")
+spc$conc <- sapply(meta, "[[", 11)
+# Preprocessing
+spc        <- spc.loess(spc, c(seq(350, 1800, 3)))
+bl         <- baseline(spc[[]], method = "als", lambda = 4, p = 0.005, maxit = 100)
+spc[[]]    <- getCorrected(bl)
+
+# Peak wavenumbers —  (MID as an example)
+ANALYTE_PEAK <- 1593   # analyte peak (cm-1)
+IS_PEAK      <-1000 # internal standard peak (cm-1)
+
+# Peak ratio
+
+ana <- as.numeric(spc[,, ANALYTE_PEAK]$spc)
+is  <- as.numeric(spc[,, IS_PEAK]$spc)
+response_ratio <- ana / is          # element-wise; no mean()
+x_train <- as.numeric(spc$conc)
+y_train <- as.vector(response_ratio)
+calibration <- lm(y_train ~ x_train)
+cat("\n--- Calibration Model ---\n")
+print(summary(calibration))
+trainspc <- spc
+
+
+
+
+# =============================================================================
+# UNKNOWN SAMPLES 
+# -----------------------------------------------------------------------------
+# All unknown .txt files in one folder. Replicates are grouped into samples by the
+# "type" label read from the filename (i.e. campioneB, campioneC, mixture1, mixture 2).
+# =============================================================================
+setwd("C:/path holding the unknown mixtures files named according to the metadata naming convention")           
+spectra_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
+if (length(spectra_files) == 0) stop("No .txt files found for unknown set.")
+spc      <- collapse(lapply(spectra_files, scan.txt.BWtek))
+spc$file <- spectra_files
+meta     <- strsplit(spc$file, "_")
+
+# Sample type from the filename 
+TYPE_FIELD <- 10                     
+spc$type   <- sapply(meta, "[[", TYPE_FIELD)
+
+# Preprocessing 
+spc        <- spc.loess(spc, c(seq(350, 1800, 3)))
+bl         <- baseline(spc[[]], method = "als", lambda = 4, p = 0.005, maxit = 100)
+spc[[]]    <- getCorrected(bl)
+
+# Peak ratio per replicate
+ratios_all <- as.vector(spc[,, ANALYTE_PEAK]$spc / mean(spc[,, IS_PEAK]$spc))
+y_range    <- range(y_train)            # calibration response range (extrapolation check)
+
+
+for (sid in unique(spc$type)) {
+  idx    <- which(spc$type == sid)
+  ratios <- ratios_all[idx]
+  
+  # per-replicate predicted concentrations
+  conc_each <- sapply(ratios, function(r) inverse.predict(calibration, r)$Prediction)
+  
+  # pooled prediction: passing all replicate ratios makes chemCal treat
+  # them as replicates of one sample and return a CI that accounts for m
+  pred <- inverse.predict(calibration, ratios)
+  cl   <- pred[["Confidence Limits"]]
+  
+  cat(sprintf("\nSample '%s'  (n = %d replicates)\n", sid, length(ratios)))
+  cat("  Peak ratios     :", paste(round(ratios, 4),    collapse = ", "), "\n")
+  cat("  Conc / replicate:", paste(round(conc_each, 4), collapse = ", "), "\n")
+  cat(sprintf("  Concentration   : %.4f\n", pred$Prediction))
+  cat(sprintf("  Standard error  : %.4f\n", pred[["Standard Error"]]))
+  cat(sprintf("  95%% CI          : [%.4f, %.4f]\n", cl[1], cl[2]))
+  if (mean(ratios) < y_range[1] || mean(ratios) > y_range[2])
+    cat("  WARNING: mean response is OUTSIDE the calibration range -> extrapolated.\n")
+}
+
+
+# =============================================================================
+########### no internal standard (predictions for IMT and NTF as examples) 
+# =============================================================================
+# same preprocessing and importing pipeline
+
+ANALYTE_PEAK <- 1032   # IMT analyte peak as an example
+# =============================================================================
+# build calibration model
+# =============================================================================
+# setwd("C:/ path to training set")  
+spectra_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
+if (length(spectra_files) == 0) stop("No .txt files found for training set.")
+spc      <- lapply(spectra_files, scan.txt.BWtek)
+spc      <- collapse(spc)
+spc$file <- spectra_files
+meta     <- strsplit(spc$file, "_")
+spc$conc <- sapply(meta, "[[", 11)
+# Preprocessing
+spc        <- spc.loess(spc, c(seq(350, 1800, 3)))
+bl         <- baseline(spc[[]], method = "als", lambda = 4, p = 0.005, maxit = 100)
+spc[[]]    <- getCorrected(bl)
+
+# Response: signal intensity at the analyte peak
+response_analyte <- spc[,, ANALYTE_PEAK]$spc
+
+x_train <- as.numeric(spc$conc)
+y_train <- as.vector(response_analyte)
+# Linear calibration model: intensity ~ concentration
+calibration <- lm(y_train ~ x_train)
+cat("\n--- Calibration Model ---\n")
+print(summary(calibration))
+trainspc <- spc
+
+
+
+# =============================================================================
+# UNKNOWN SAMPLES
+# =============================================================================
+setwd("C:/path to unknown samples")           
+spectra_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
+if (length(spectra_files) == 0) stop("No .txt files found for unknown set.")
+spc      <- collapse(lapply(spectra_files, scan.txt.BWtek))
+spc$file <- spectra_files
+meta     <- strsplit(spc$file, "_")
+
+# Sample type from the filename 
+TYPE_FIELD <- 10                       
+spc$type   <- sapply(meta, "[[", TYPE_FIELD)
+
+# Preprocessing (identical to calibration)
+spc        <- spc.loess(spc, c(seq(350, 1800, 3)))
+bl         <- baseline(spc[[]], method = "als", lambda = 4, p = 0.005, maxit = 100)
+spc[[]]    <- getCorrected(bl)
+
+# Signal intensity per replicate
+intensities_all <- as.vector(spc[,, ANALYTE_PEAK]$spc)
+y_range         <- range(y_train)       # calibration response range (extrapolation check)
+
+
+for (sid in unique(spc$type)) {
+  idx         <- which(spc$type == sid)
+  intensities <- intensities_all[idx]
+  conc_each <- sapply(intensities, function(r) inverse.predict(calibration, r)$Prediction)
+  pred <- inverse.predict(calibration, intensities)
+  cl   <- pred[["Confidence Limits"]]
+  
+  cat(sprintf("\nSample '%s'  (n = %d replicates)\n", sid, length(intensities)))
+  cat("  Intensities     :", paste(round(intensities, 4), collapse = ", "), "\n")
+  cat("  Conc / replicate:", paste(round(conc_each, 4),   collapse = ", "), "\n")
+  cat(sprintf("  Concentration   : %.4f\n", pred$Prediction))
+  cat(sprintf("  Standard error  : %.4f\n", pred[["Standard Error"]]))
+  cat(sprintf("  95%% CI          : [%.4f, %.4f]\n", cl[1], cl[2]))
+  if (mean(intensities) < y_range[1] || mean(intensities) > y_range[2])
+    cat("  WARNING: mean response is OUTSIDE the calibration range -> extrapolated.\n")
+}
+
+
+
+
+######################## WLS unknwon samples prediction
+# Neither chemCal::inverse.predict() nor investr::calibrate() correctly
+# propagate the variance structure of a WEIGHTED lm() fit (investr actually
+# refits as OLS internally and rejects weighted objects outright). This is
+# the standard extension of the classical calibration SE formula (as used by
+# chemCal for OLS) to the weighted case, treating the fitting weights w_i as
+# inverse-variance weights: Var(y_i) = sigma^2 / w_i.
+#
+#   x0        = (ybar0 - a) / b
+#   Var(x0)   = (sigma^2 / b^2) * [ 1/(w0*m) + 1/Sw + (x0 - xbar_w)^2 / Sxx_w ]
+#
+# where sigma^2 is the weighted residual variance from the calibration model,
+# Sw = sum(w_i), xbar_w is the weighted mean of the calibration x's, Sxx_w is
+# the weighted sum of squares, m is the number of new replicates, and w0 is
+# the weight (inverse variance) appropriate to the new observation(s).
+# -----------------------------------------------------------------------------
+wls.inverse.predict <- function(model, y0, level = 0.95) {
+  cf   <- coef(model)
+  a    <- cf[1]; b <- cf[2]
+  w    <- weights(model)
+  x    <- model$model[[2]]                 # predictor column
+  n    <- length(x)
+  df   <- n - 2
+  sigma2 <- sum(w * residuals(model)^2) / df   # weighted residual variance
+  
+  Sw     <- sum(w)
+  xbar_w <- sum(w * x) / Sw
+  Sxx_w  <- sum(w * (x - xbar_w)^2)
+  
+  m    <- length(y0)
+  ybar0 <- mean(y0)
+  x0   <- as.numeric((ybar0 - a) / b)
+  
+  # weight for the new observation
+  if (m >= 2) {
+    v0 <- var(y0)
+    w0 <- if (is.na(v0) || v0 == 0) mean(w) else 1 / v0
+  } else {
+    w0 <- mean(w)
+  }
+  
+  var_x0 <- (sigma2 / b^2) * (1 / (w0 * m) + 1 / Sw + (x0 - xbar_w)^2 / Sxx_w)
+  se_x0  <- sqrt(var_x0)
+  
+  tcrit <- qt(1 - (1 - level) / 2, df)
+  list(
+    estimate = x0,
+    se       = se_x0,
+    lower    = x0 - tcrit * se_x0,
+    upper    = x0 + tcrit * se_x0
+  )
+}
+
+
+ANALYTE_PEAK <- 1608   # NTF peak as an example
+
+# =============================================================================
+#  build WLS calibration model
+# =============================================================================
+setwd("C:/path to working directory")   
+spectra_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
+if (length(spectra_files) == 0) stop("No .txt files found for training set.")
+
+spc      <- lapply(spectra_files, scan.txt.BWtek)
+spc      <- collapse(spc)
+spc$file <- spectra_files
+meta     <- strsplit(spc$file, "_")
+spc$conc <- sapply(meta, "[[", 11)
+
+# Preprocessing
+spc        <- spc.loess(spc, c(seq(350, 1800, 3)))
+bl         <- baseline(spc[[]], method = "als", lambda = 4, p = 0.005, maxit = 100)
+spc[[]]    <- getCorrected(bl)
+
+# Response: signal intensity at the analyte peak
+response_analyte <- spc[,, ANALYTE_PEAK]$spc
+x_train <- as.numeric(spc$conc)
+y_train <- as.vector(response_analyte)
+
+# ---- Build calibration data.frame and empirical inverse-variance weights ----
+# (identical weighting logic to script 2: w_i = 1 / var_i, grouped by concentration)
+cal_data <- data.frame(conc = x_train, response = y_train)
+
+variance_df <- cal_data %>%
+  group_by(conc) %>%
+  summarise(var_resp = var(response), .groups = "drop") %>%
+  mutate(
+    var_resp = ifelse(is.na(var_resp) | var_resp == 0,
+                      min(var_resp[var_resp > 0], na.rm = TRUE),
+                      var_resp),
+    weight = 1 / var_resp
+  )
+
+cal_data <- cal_data %>% left_join(variance_df %>% select(conc, weight), by = "conc")
+
+# Weighted least-squares calibration model: intensity ~ concentration
+calibration <- lm(response ~ conc, data = cal_data, weights = weight)
+
+print(summary(calibration))
+
+trainspc <- spc
+
+# =============================================================================
+# UNKNOWN SAMPLES — quantification via WLS inverse prediction
+# =============================================================================
+setwd("C:/path to unknwon samples")           
+spectra_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
+if (length(spectra_files) == 0) stop("No .txt files found for unknown set.")
+
+spc      <- collapse(lapply(spectra_files, scan.txt.BWtek))
+spc$file <- spectra_files
+meta     <- strsplit(spc$file, "_")
+
+# Sample type from the filename 
+TYPE_FIELD <- 10                      
+spc$type   <- sapply(meta, "[[", TYPE_FIELD)
+
+# Preprocessing 
+spc        <- spc.loess(spc, c(seq(350, 1800, 3)))
+bl         <- baseline(spc[[]], method = "als", lambda = 4, p = 0.005, maxit = 100)
+spc[[]]    <- getCorrected(bl)
+
+# Signal intensity per replicate
+intensities_all <- as.vector(spc[,, ANALYTE_PEAK]$spc)
+y_range         <- range(y_train)      
+
+for (sid in unique(spc$type)) {
+  idx         <- which(spc$type == sid)
+  intensities <- intensities_all[idx]
+  
+  conc_each <- sapply(intensities, function(r) wls.inverse.predict(calibration, r)$estimate)
+  pred <- wls.inverse.predict(calibration, intensities, level = 0.95)
+  
+  cat(sprintf("\nSample '%s'  (n = %d replicates)\n", sid, length(intensities)))
+  cat("  Intensities     :", paste(round(intensities, 4), collapse = ", "), "\n")
+  cat("  Conc / replicate:", paste(round(conc_each, 4),   collapse = ", "), "\n")
+  cat(sprintf("  Concentration   : %.4f\n", pred$estimate))
+  cat(sprintf("  Standard error  : %.4f\n", pred$se))
+  cat(sprintf("  95%% CI          : [%.4f, %.4f]\n", pred$lower, pred$upper))
+  
+  if (mean(intensities) < y_range[1] || mean(intensities) > y_range[2])
+    cat("  WARNING: mean response is OUTSIDE the calibration range -> extrapolated.\n")
+}
+
+
