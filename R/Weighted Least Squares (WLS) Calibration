@@ -1,0 +1,131 @@
+# ==============================================================================
+# WLS Calibration Model Construction (NTF as an example)
+#change band position and PNEC according to analyte, load training set as working directory 
+# ==============================================================================
+
+cal_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
+spc_cal <- lapply(cal_files, scan.txt.BWtek)
+spc_cal <- collapse(spc_cal)
+spc_cal$file <- cal_files
+
+meta_cal <- strsplit(spc_cal$file, "_")
+spc_cal$conc <- sapply(meta_cal, "[[", 11)
+
+spc_cal <- spc.loess(spc_cal, c(seq(350, 1800, 3)))
+bl_cal <- baseline(spc_cal[[]], method = "als", lambda = 4, p = 0.005, maxit = 100)
+spc_cal[[]] <- getCorrected(bl_cal)
+
+cal_data <- data.frame(
+  conc = as.numeric(spc_cal$conc),
+  response = spc_cal[, , 1608]$spc
+)
+
+blank_data <- cal_data[cal_data$conc == 0, ]
+sd_blank   <- sd(blank_data$response)
+
+cal_data$weights <- ifelse(cal_data$conc == 0, 1 / (sd_blank^2), 1 / (cal_data$conc^2))
+
+model_wls     <- lm(response ~ conc, data = cal_data, weights = cal_data$weights)
+slope_wls     <- coef(model_wls)[2]
+intercept_wls <- coef(model_wls)[1]
+se_slope_wls  <- summary(model_wls)$coefficients[2, "Std. Error"]
+se_int_wls    <- summary(model_wls)$coefficients[1, "Std. Error"]
+Sy_x_wls      <- summary(model_wls)$sigma
+
+x_theo <- cal_data$conc[cal_data$conc != 0]
+x_meas_wls <- (cal_data$response[cal_data$conc != 0] - intercept_wls) / slope_wls
+re_wls <- calc_re(x_meas_wls, x_theo)
+
+LOD_blank_wls  <- 3.3 * sd_blank / slope_wls
+LOQ_blank_wls  <- 10 * sd_blank / slope_wls
+LOD_hubaux_wls <- 3.3 * Sy_x_wls / slope_wls
+
+
+cal_data$calc_conc <- (cal_data$response - intercept_wls) / slope_wls
+cal_data$recovery  <- (cal_data$calc_conc / cal_data$conc) * 100
+cal_data$rel_error <- ((cal_data$calc_conc - cal_data$conc) / cal_data$conc) * 100
+
+cal_data$raw_resid      <- residuals(model_wls)
+cal_data$weighted_resid <- cal_data$raw_resid * sqrt(cal_data$weights)
+cal_data$std_w_resid    <- cal_data$weighted_resid / Sy_x_wls
+
+# ==============================================================================
+# Independent Dataset Validation 
+# ==============================================================================
+
+val_dir <- "C:/path to validation set"
+val_files <- list.files(path = val_dir, pattern = "\\.txt$", full.names = TRUE)
+if(length(val_files) == 0) {
+  warning("Validation directory empty or path incorrect. Please update 'val_dir'.")
+} else {
+  spc_val <- lapply(val_files, scan.txt.BWtek)
+  spc_val <- collapse(spc_val)
+  spc_val$file <- basename(val_files)
+  
+  meta_val <- strsplit(spc_val$file, "_")
+  spc_val$nominal_conc <- as.numeric(sapply(meta_val, "[[", 11))
+  
+  spc_val <- spc.loess(spc_val, c(seq(350, 1800, 3)))
+  bl_val  <- baseline(spc_val[[]], method = "als", lambda = 4, p = 0.005, maxit = 100)
+  spc_val[[]] <- getCorrected(bl_val)
+  
+  val_data <- data.frame(
+    file = spc_val$file,
+    nominal_conc = spc_val$nominal_conc,
+    response = spc_val[, , 1608]$spc
+  )
+  
+  pnec_threshold <- 1 # change according to PNEC target
+  
+  val_data$predicted_conc <- (val_data$response - intercept_wls) / slope_wls
+  
+  val_data$actual_class <- factor(ifelse(val_data$nominal_conc >= pnec_threshold, "Above 1 ppb", "Below 1 ppb"),
+                                  levels = c("Below 1 ppb", "Above 1 ppb"))
+  val_data$pred_class   <- factor(ifelse(val_data$predicted_conc >= pnec_threshold, "Above 1 ppb", "Below 1 ppb"),
+                                  levels = c("Below 1 ppb", "Above 1 ppb"))
+  
+  confusion_matrix <- table(Actual = val_data$actual_class, Predicted = val_data$pred_class)
+  
+  TP <- confusion_matrix["Above 1 ppb", "Above 1 ppb"]
+  TN <- confusion_matrix["Below 1 ppb", "Below 1 ppb"]
+  FP <- confusion_matrix["Below 1 ppb", "Above 1 ppb"]
+  FN <- confusion_matrix["Above 1 ppb", "Below 1 ppb"]
+  
+  accuracy    <- (TP + TN) / sum(confusion_matrix) * 100
+  sensitivity <- TP / (TP + FN) * 100
+  specificity <- TN / (TN + FP) * 100
+}
+
+cat("\n========================================================\n")
+cat("          WLS CAL MODEL PERFORMANCE REPORT              \n")
+cat("========================================================\n")
+cat(sprintf("Slope (b1):          %.6g (SE = %.4g)\n", slope_wls, se_slope_wls))
+cat(sprintf("Intercept (b0):      %.6g (SE = %.4g)\n", intercept_wls, se_int_wls))
+cat(sprintf("Weighted Sy/x:       %.4g\n", Sy_x_wls))
+cat(sprintf("Mean Abs %%RE:        %.2f%%\n", re_wls["aver"]))
+cat(sprintf("Max Abs %%RE:         %.2f%%\n", re_wls["max"]))
+cat(sprintf("Blank SD LOD:        %.4g ppb\n", LOD_blank_wls))
+cat(sprintf("Blank SD LOQ:        %.4g ppb\n", LOQ_blank_wls))
+cat(sprintf("Hubaux-Vos LOD:      %.4g ppb\n", LOD_hubaux_wls))
+
+if (exists("val_data")) {
+  cat("\n========================================================\n")
+  cat("     INDEPENDENT VALIDATION REPORT      \n")
+  cat("========================================================\n")
+  print(confusion_matrix)
+  cat(sprintf("\nAccuracy:    %.2f%%\n", accuracy))
+  cat(sprintf("Sensitivity: %.2f%%\n", sensitivity))
+  cat(sprintf("Specificity: %.2f%%\n", specificity))
+}
+
+
+plot(response ~ conc, data = cal_data,
+     xlab = "Nominal Concentration (ppb)", 
+     ylab = expression(paste("Intensity at 1608", cm^-1, " (a.u.)")),
+     main = "A) Weighted Linear Fit", pch = 1, col = adjustcolor("gray40", alpha = 0.6))
+summary_data <- aggregate(response ~ conc, data = cal_data, FUN = mean)
+points(response ~ conc, data = summary_data, pch = 19, col = "black")
+abline(model_wls, col = "#0072B2", lwd = 2)
+legend("topleft", legend = c("Replicates", "Mean Response", "WLS Fit"),
+       pch = c(1, 19, NA), lty = c(NA, NA, 1), col = c("gray40", "black", "#0072B2"),
+       lwd = c(NA, NA, 2), bty = "n", cex = 0.85)
