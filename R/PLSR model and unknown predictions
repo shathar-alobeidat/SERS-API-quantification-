@@ -1,0 +1,142 @@
+library(pls)        
+
+# TRAINING SET: build PLS calibration model
+
+setwd("C:/path to training set")   
+spectra_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
+if (length(spectra_files) == 0) stop("No .txt files found")
+spc      <- lapply(spectra_files, scan.txt.BWtek)
+spc      <- collapse(spc)
+spc$file <- spectra_files
+meta     <- strsplit(spc$file, "_")
+spc$conc <- sapply(meta, "[[", 11)
+
+# Preprocessing 
+spc        <- spc.loess(spc, c(seq(350, 1800, 3)))
+bl         <- baseline(spc[[]], method = "als", lambda = 4, p = 0.005, maxit = 100)
+spc[[]]    <- getCorrected(bl)
+
+# Predictors
+X_train <- spc[[]]
+y_train <- as.numeric(spc$conc)
+
+train_df <- data.frame(conc = y_train, X = I(X_train))
+
+# PLS model with leave-one-out cross-validation.
+NCOMP_MAX <- min(15, nrow(X_train) - 1)
+pls_model <- plsr(conc ~ X, data = train_df,
+                  ncomp = NCOMP_MAX, validation = "CV", scale = FALSE)
+
+# latent variables 
+# fall back to the RMSEP minimum if selectNcomp returns nothing 
+ncomp_opt <- tryCatch(selectNcomp(pls_model, method = "onesigma", plot = FALSE),
+                      error = function(e) NA_integer_)
+if (is.na(ncomp_opt) || ncomp_opt < 1) {
+  rmsep_vals <- RMSEP(pls_model, estimate = "CV")$val[1, 1, -1]  # drop intercept-only
+  ncomp_opt  <- which.min(rmsep_vals)
+}
+
+# Cross-validated performance at the chosen number of components
+rmsep_cv <- as.numeric(RMSEP(pls_model, estimate = "CV",
+                             ncomp = ncomp_opt, intercept = FALSE)$val)
+r2_cv    <- as.numeric(R2(pls_model, estimate = "CV",
+                          ncomp = ncomp_opt, intercept = FALSE)$val)
+
+cat("\n--- PLS Calibration Model ---\n")
+cat(sprintf("Latent variables selected : %d (of %d evaluated)\n", ncomp_opt, NCOMP_MAX))
+cat(sprintf("Cross-validated R2        : %.4f\n", r2_cv))
+cat(sprintf("Cross-validated RMSEP     : %.4f\n", rmsep_cv))
+
+trainspc <- spc
+
+# mixtures quantification with the PLS model
+setwd("C:/path to mixture samples")           
+spectra_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
+if (length(spectra_files) == 0) stop("No .txt files found for unknown set.")
+spc      <- collapse(lapply(spectra_files, scan.txt.BWtek))
+spc$file <- spectra_files
+meta     <- strsplit(spc$file, "_")
+
+# Sample type from the filename 
+TYPE_FIELD <- 10                  
+spc$type   <- sapply(meta, "[[", TYPE_FIELD)
+
+# True (nominal) concentration from the filename (if it is not unknown, for recovery calculations)
+CONC_FIELD    <- 11                  
+spc$conc_true <- as.numeric(sapply(meta, "[[", CONC_FIELD))
+
+# Preprocessing 
+spc        <- spc.loess(spc, c(seq(350, 1800, 3)))
+bl         <- baseline(spc[[]], method = "als", lambda = 4, p = 0.005, maxit = 100)
+spc[[]]    <- getCorrected(bl)
+
+
+# Predict concentration for every replicate 
+X_unknown  <- spc[[]]
+unknown_df <- data.frame(X = I(X_unknown))
+pred_all   <- as.numeric(predict(pls_model, ncomp = ncomp_opt, newdata = unknown_df))
+
+for (sid in unique(spc$type)) {
+  idx <- which(spc$type == sid)
+  pc  <- pred_all[idx]                  # predicted conc per replicate
+  n   <- length(pc)
+  m   <- mean(pc)
+  
+  # True concentration for this sample (if available)
+  true_each <- spc$conc_true[idx]
+  true_conc <- mean(true_each)
+  if (length(unique(round(true_each, 6))) > 1)
+    cat("  NOTE: replicates of this sample have differing true concentrations.\n")
+  
+  # Recovery (%) = predicted / true * 100, undefined for a true value of 0 (blank)
+  if (is.finite(true_conc) && true_conc != 0) {
+    rec_each <- pc / true_each * 100    # per-replicate recovery
+    recovery <- m  / true_conc  * 100   # recovery from the mean prediction
+  } else {
+    rec_each <- rep(NA_real_, n)
+    recovery <- NA_real_
+  }
+  
+  # Repeatability CI from the spread of replicate predictions
+  
+  if (n > 1) {
+    se   <- sd(pc) / sqrt(n)
+    tval <- qt(0.975, df = n - 1)
+    ci   <- m + c(-1, 1) * tval * se
+  } else {
+    se <- NA_real_
+    ci <- c(NA_real_, NA_real_)
+  }
+  
+  cat(sprintf("\nSample '%s'  (n = %d replicates)\n", sid, n))
+  cat("  Conc / replicate :", paste(round(pc, 4), collapse = ", "), "\n")
+  cat(sprintf("  Concentration    : %.4f\n", m))
+  cat(sprintf("  True conc.       : %.4f\n", true_conc))
+  cat("  Recovery / rep   :", paste(round(rec_each, 1), collapse = ", "), "%\n")
+  cat(sprintf("  Recovery (mean)  : %.1f %%\n", recovery))
+  cat(sprintf("  Repeatability SE : %.4f\n", se))
+  if (n > 1)
+    cat(sprintf("  95%% CI (reps)    : [%.4f, %.4f]\n", ci[1], ci[2]))
+  cat(sprintf("  Model RMSEP (CV) : +/- %.4f  (%d latent variables)\n", rmsep_cv, ncomp_opt))
+
+plot(RMSEP(pls_model, estimate = c("train", "CV")), legendpos = "topright")
+set.seed(1)
+perm_r2 <- replicate(50, {
+  yp <- sample(y_train)
+  m  <- plsr(yp ~ X_train, ncomp = ncomp_opt, validation = "LOO", scale = FALSE)
+  as.numeric(R2(m, estimate = "CV", ncomp = ncomp_opt, intercept = FALSE)$val)
+})
+cat(sprintf("Real CV R2: %.3f | permuted R2 mean: %.3f (max %.3f)\n",
+            r2_cv, mean(perm_r2), max(perm_r2)))
+cat(ncomp_opt, rmsep_cv, "\n")
+table(y_train)   # counts per concentration; any value > 1 means replicates exist
+grp_segments <- split(seq_along(y_train), y_train)
+pls_grouped  <- plsr(conc ~ X, data = train_df,
+                     ncomp = NCOMP_MAX,
+                     validation = "CV", segments = grp_segments, scale = FALSE)
+ncomp_g <- selectNcomp(pls_grouped, method = "onesigma", plot = FALSE)
+if (is.na(ncomp_g) || ncomp_g < 1) ncomp_g <- 4
+cat(sprintf("Grouped CV: ncomp=%d  R2=%.3f  RMSEP=%.3f\n",
+            ncomp_g,
+            as.numeric(R2(pls_grouped, estimate="CV", ncomp=ncomp_g, intercept=FALSE)$val),
+            as.numeric(RMSEP(pls_grouped, estimate="CV", ncomp=ncomp_g, intercept=FALSE)$val)))
