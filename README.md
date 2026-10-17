@@ -2,9 +2,7 @@
 # Colloidal SERS quantification of pharmaceuticals in wastewater
 
 R scripts for the calibration, validation and chemometric analyses on
-colloidal SERS quantification of active pharmaceutical ingredients (imatinib (IMT), nitrofurantoin (NTF),
-midazolam (MID)) 
-
+colloidal SERS quantification of compounds in complex matrices.
 ## Scripts (in `R/`)
 
 | Script | Purpose |
