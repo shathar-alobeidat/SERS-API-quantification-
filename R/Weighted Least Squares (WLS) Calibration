@@ -1,7 +1,7 @@
-# ==============================================================================
-# WLS Calibration Model Construction (NTF as an example)
+
+# WLS Calibration Model Construction 
 #change band position and PNEC according to analyte, load training set as working directory 
-# ==============================================================================
+
 
 cal_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
 spc_cal <- lapply(cal_files, scan.txt.BWtek)
@@ -49,10 +49,8 @@ cal_data$raw_resid      <- residuals(model_wls)
 cal_data$weighted_resid <- cal_data$raw_resid * sqrt(cal_data$weights)
 cal_data$std_w_resid    <- cal_data$weighted_resid / Sy_x_wls
 
-# ==============================================================================
-# Independent Dataset Validation 
-# ==============================================================================
 
+# Independent Dataset Validation 
 val_dir <- "C:/path to validation set"
 val_files <- list.files(path = val_dir, pattern = "\\.txt$", full.names = TRUE)
 if(length(val_files) == 0) {
@@ -96,9 +94,7 @@ if(length(val_files) == 0) {
   specificity <- TN / (TN + FP) * 100
 }
 
-cat("\n========================================================\n")
-cat("          WLS CAL MODEL PERFORMANCE REPORT              \n")
-cat("========================================================\n")
+
 cat(sprintf("Slope (b1):          %.6g (SE = %.4g)\n", slope_wls, se_slope_wls))
 cat(sprintf("Intercept (b0):      %.6g (SE = %.4g)\n", intercept_wls, se_int_wls))
 cat(sprintf("Weighted Sy/x:       %.4g\n", Sy_x_wls))
@@ -109,16 +105,15 @@ cat(sprintf("Blank SD LOQ:        %.4g ppb\n", LOQ_blank_wls))
 cat(sprintf("Hubaux-Vos LOD:      %.4g ppb\n", LOD_hubaux_wls))
 
 if (exists("val_data")) {
-  cat("\n========================================================\n")
+ 
   cat("     INDEPENDENT VALIDATION REPORT      \n")
-  cat("========================================================\n")
   print(confusion_matrix)
   cat(sprintf("\nAccuracy:    %.2f%%\n", accuracy))
   cat(sprintf("Sensitivity: %.2f%%\n", sensitivity))
   cat(sprintf("Specificity: %.2f%%\n", specificity))
 }
 
-
+#visuals, change to target analyte 
 plot(response ~ conc, data = cal_data,
      xlab = "Nominal Concentration (ppb)", 
      ylab = expression(paste("Intensity at 1608", cm^-1, " (a.u.)")),
