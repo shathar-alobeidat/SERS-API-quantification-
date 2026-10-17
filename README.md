@@ -2,7 +2,7 @@
 # Colloidal SERS quantification of compounds in complex matrices
 
 R scripts for the calibration, validation and chemometric analyses on
-colloidal SERS quantification of compounds in complex matrices. These scripts were applied to active pharmaceutical ingredients (API) quantification in wastewater but can be adapted to any trace level quantification in a similarily complex matrix with SERS
+colloidal SERS quantification of compounds in complex matrices. These scripts were applied to active pharmaceutical ingredients (API) quantification in wastewater (MID,NTF,IMT) so the scripts contain them as examples, but they be adapted to any trace level quantification in a similarily complex matrix with SERS
 ## Scripts (in `R/`)
 
 | Script | Purpose |
