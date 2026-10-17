@@ -1,4 +1,4 @@
- =============================================================================
+
 #  Quantification by Classical Least Squares (CLS) spectral unmixing (MID as an example)
 
 # same data importing pipeline
@@ -13,21 +13,21 @@ MID_BAND  <- c(1575, 1610)   # used for diagnostics
 TYPE_FIELD <- 10
 CONC_FIELD <- 11
 
-# =============================================================================
-# SHARED PREPROCESSING
+
+#Preprocessing 
 #   Baseline (ALS) only. NO vector normalisation here:
 #   CLS needs additive intensities, and L2-norm is closure-sensitive (a strong
 #   interferent band redistributes intensity across all other bands).
-# =============================================================================
+
 preprocess <- function(spc) {
   spc      <- spc.loess(spc, COMMON_GRID)
   bl       <- baseline(spc[[]], method = "als", lambda = 4, p = 0.005, maxit = 100)
   spc[[]]  <- getCorrected(bl)
   spc
 }
-# =============================================================================
+
 # build the CLS reference matrix by loading pure components spectra
-# =============================================================================
+
 setwd("C:path to pure components")
 pure_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
 if (length(pure_files) == 0) stop("No pure-component .txt files found.")
@@ -81,9 +81,9 @@ cn <- kappa(model.matrix(~ MID + IS + IMT + NTF + ramp, data = ref))
 cat(sprintf("\nCLS design condition number: %.1f  %s\n", cn,
             ifelse(cn > 1000, "<- HIGH: coefficients may be unstable", "(ok)")))
 
-# =============================================================================
+
 # CLS model
-# =============================================================================
+
 cls_scores <- function(X) {
   fit  <- lm(t(X) ~ MID + IS + IMT + NTF + ramp, data = ref)   # response: wl x samp
   co   <- coef(fit)                                            # predictors x samp
@@ -97,9 +97,9 @@ cls_scores <- function(X) {
        recon_r2 = r2, resid_norm = sqrt(ss_res))
 }
 
-# =============================================================================
-# 3. TRAINING SET  -> CLS MID score using univariate calibration
-# =============================================================================
+
+#  CLS score using calibration
+
 setwd("C:/path to calibration training set")
 train_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
 if (length(train_files) == 0) stop("No training .txt files found.")
@@ -119,14 +119,14 @@ cat(sprintf("  mean|IMT score| = %.3g   mean|NTF score| = %.3g\n",
             mean(abs(cls_tr$IMT)), mean(abs(cls_tr$NTF))))
 cat(sprintf("  mean reconstruction R2 = %.3f\n", mean(cls_tr$recon_r2)))
 
-# ---  calibration-residual outliers removal ------------------
+#  calibration-residual outliers removal 
 calib0    <- lm(mid_tr ~ y_train)
 sr        <- rstudent(calib0)
 keep      <- abs(sr) <= 3                       # drop only gross calibration outliers
 if (any(!keep)) cat(sprintf("\nDropping %d calibration outlier(s): index %s\n",
                             sum(!keep), paste(which(!keep), collapse = ", ")))
 
-# --- final calibration line (CLS score vs known concentration) -----------
+# CLS score vs known concentration
 calib <- lm(mid_tr[keep] ~ y_train[keep])
 cat("\n=== Calibration (MID CLS score vs concentration) ===\n")
 print(summary(calib))
@@ -137,9 +137,9 @@ cat(sprintf("  LOD = %.3f   LOQ = %.3f  (same conc units as training)\n",
             tryCatch(lod(calib_cc)$x, error = function(e) NA),
             tryCatch(loq(calib_cc)$x, error = function(e) NA)))
 
-# =============================================================================
+
 # inversse prediction of mixtures with CLS
-# =============================================================================
+
 setwd("C:/path to unknown samples")
 unk_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
 if (length(unk_files) == 0) stop("No unknown .txt files found.")
@@ -173,10 +173,9 @@ pred_rep <- cbind(
   est = sapply(mid_unk, point_est),
   t(sapply(mid_unk, inv_ci))
 )
-# =============================================================================
+
 # Results
-# =============================================================================
-cat("\n--- Unknown Samples: CLS Predictions & Recovery ---\n")
+
 cat(sprintf("%-18s %4s %9s %9s %9s %18s %9s %8s\n",
             "Sample", "n", "Nom", "Mean", "SD", "95% CI", "Rec%", "ReconR2"))
 cat(strrep("-", 92), "\n")
@@ -209,9 +208,8 @@ for (sid in unique(unk$type)) {
 }
 results_df <- do.call(rbind, results_list)
 
-# =============================================================================
+
 # visuals
-# =============================================================================
 
 # (a) Calibration line
 plot(y_train[keep], mid_tr[keep], pch = 19, col = "steelblue",
@@ -230,9 +228,9 @@ text(results_df$Nominal, results_df$Mean, labels = results_df$Sample,
 
 
 
-# =============================================================================
-# Net analyte signal check #MID as an example
-# =============================================================================
+
+# Net analyte signal check 
+
 G <- cbind(IS   = is_pure,
            IMT  = imt_pure,
            NTF  = ntf_pure,
@@ -254,11 +252,11 @@ cat(sprintf("Fraction of analyte orthogonal to interferents: %.3f\n", frac_uniqu
 plot(wl, nas_mid, type = "l",
      main = "Net analyte signal (MID, interferent-orthogonal part)",
      xlab = "Raman shift (cm-1)", ylab = "NAS intensity")
-abline(v = 1593, col = "red", lty = 3)
+abline(v = 1593, col = "red", lty = 3) #change band position to target analyte
 
 
 
-# --- NAS scores ---------
+# NAS scores 
 nas_unit  <- nas_mid / sqrt(sum(nas_mid^2))
 nas_score <- function(X) as.numeric(X %*% nas_unit)   # X: samples x wl
 
