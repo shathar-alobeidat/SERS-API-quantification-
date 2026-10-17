@@ -1,9 +1,9 @@
-==============================================================================
-# SERS QUANTITATIVE ANALYSIS & INDEPENDENT PNEC VALIDATION (IMATINIB - IMT)
+
+# SERS QUANTITATIVE ANALYSIS & INDEPENDENT PNEC VALIDATION 
 # Method: Ordinary Least Squares (OLS).
 IMT as an example: PNEC = 96 ppb, target peak: 1032 cm-1
 PNEC for NTF is 1 ppb (1608 cm-1), for MID its 0.289 ppb (1593 cm-1/1000cm-1 internal standard normalization) 
-# ==============================================================================
+
 
 
 cal_files <- list.files(pattern = "\\.txt$", recursive = TRUE)
@@ -54,11 +54,8 @@ cal_data_fit$recovery  <- (cal_data_fit$calc_conc / cal_data_fit$conc) * 100
 cal_data_fit$rel_error <- ((cal_data_fit$calc_conc - cal_data_fit$conc) / cal_data_fit$conc) * 100
 cal_data_fit$std_resid <- rstandard(model_ols) # Statistically rigorous standardized residuals
 
-# ==============================================================================
+
  # Independent Validation at PNEC Threshold
-# ==============================================================================
-
-
 val_dir <- "C:/path to validation set"
 
 val_files <- list.files(path = val_dir, pattern = "\\.txt$", full.names = TRUE)
@@ -103,9 +100,7 @@ if(length(val_files) == 0) {
 }
 
 
-cat("\n========================================================\n")
-cat("           OLS CAL MODEL PERFORMANCE REPORT          \n")
-cat("========================================================\n")
+
 cat(sprintf("Slope (b1):          %.6g (SE = %.4g)\n", slope_ols, se_slope_ols))
 cat(sprintf("Intercept (b0):      %.6g (SE = %.4g)\n", intercept_ols, se_int_ols))
 cat(sprintf("Residual Sy/x:       %.4g\n", Sy_x_ols))
@@ -117,9 +112,8 @@ cat(sprintf("Blank SD LOQ:        %.4g ppb\n", LOQ_blank_ols))
 cat(sprintf("Hubaux-Vos LOD:      %.4g ppb\n", LOD_hubaux_ols))
 
 if (exists("val_data")) {
-  cat("\n========================================================\n")
+
   cat("     INDEPENDENT VALIDATION REPORT       \n")
-  cat("========================================================\n")
   print(confusion_matrix)
   cat(sprintf("\nAccuracy:    %.2f%%\n", accuracy))
   cat(sprintf("Sensitivity: %.2f%%\n", sensitivity))
